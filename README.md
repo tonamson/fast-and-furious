@@ -51,6 +51,36 @@ function withdraw(uint256 amount) public {
 - Khi ETH transfer trigger `receive()` của recipient, balance vẫn chưa bị trừ
 - Attacker có thể rút nhiều lần với cùng một balance
 
+### ⚠️ Lưu ý về Solidity Version:
+
+**Lỗ hổng này chỉ xảy ra ở Solidity < 0.8.0:**
+
+- **Solidity < 0.8.0**: Không có built-in protection, dễ bị exploit như trong demo này
+- **Solidity >= 0.8.0**: Đã có một số cải thiện về overflow/underflow protection, nhưng **vẫn không đủ** để chống reentrancy attack
+
+**Khuyến nghị bảo mật:**
+
+Dù đã dùng Solidity 0.8.0+, bạn **vẫn phải** sử dụng `ReentrancyGuard` cho các hàm quan trọng về xử lý tiền bạc để tránh call loop:
+
+```solidity
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract Bank is ReentrancyGuard {
+    function withdraw(uint256 amount) public nonReentrant {
+        require(balances[msg.sender] >= amount, "Insufficient balance");
+        balances[msg.sender] -= amount; // Cập nhật state trước
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+}
+```
+
+**Lý do:**
+
+- Solidity 0.8.0+ chỉ bảo vệ khỏi arithmetic overflow/underflow
+- **KHÔNG** tự động bảo vệ khỏi reentrancy attack
+- `ReentrancyGuard` là giải pháp chuẩn để ngăn chặn call loop trong các hàm xử lý tiền
+
 ## 🎯 Cách Exploit hoạt động
 
 ### Exploit Contract:
