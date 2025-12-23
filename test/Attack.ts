@@ -66,9 +66,6 @@ describe("Attack", function () {
     expect(currentDeposit).to.be.equal(ethers.parseEther("1"));
     console.log("Số tiền attacker nạp:", ethers.formatEther(currentDeposit));
 
-    // bật tính năng attack
-    await Exploit.setAttack(true);
-
     // exploit rút tiền từ bank
     try {
       await Exploit.withdrawFromBank(ethers.parseEther("1"));
