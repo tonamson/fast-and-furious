@@ -10,11 +10,6 @@ describe("Attack", function () {
     const Exploit = await ethers.deployContract("Exploit", [
       await Bank.getAddress(),
     ]);
-    console.log("user1 address:", user1.address);
-
-    // debug coi địa chỉ contract
-    console.log("Bank address:", await Bank.getAddress());
-    console.log("Exploit address:", await Exploit.getAddress());
 
     // nạp 10 ETH cho contract bank để test exploit
     await user1.sendTransaction({
@@ -55,15 +50,21 @@ describe("Attack", function () {
     const [user0] = await ethers.getSigners();
     const { Bank, Exploit } = await deployContract();
 
+    console.log("--------------------------------");
     // tiến hành gọi exploit nạp tiền vào bank
     await Exploit.depositToBank({
       value: ethers.parseEther("1"),
     });
 
+    console.log(
+      "Số tiền bank ban đầu:",
+      ethers.formatEther(await Bank.getContractBalance())
+    );
+
     // kiểm tra balance của exploit
     const currentDeposit = await Bank.getBalance(await Exploit.getAddress());
     expect(currentDeposit).to.be.equal(ethers.parseEther("1"));
-    console.log("Số tiền nạp:", ethers.formatEther(currentDeposit));
+    console.log("Số tiền attacker nạp:", ethers.formatEther(currentDeposit));
 
     // bật tính năng attack
     await Exploit.setAttack(true);
@@ -75,9 +76,9 @@ describe("Attack", function () {
       console.log(error);
     }
 
-    const exploitDo = await Bank.getBalance(await Exploit.getAddress());
-    console.log("Số tiền exploit rút:", ethers.formatEther(exploitDo));
-
-    console.log(ethers.formatEther(await Bank.getContractBalance()));
+    console.log(
+      "Số tiền bank còn lại:",
+      ethers.formatEther(await Bank.getContractBalance())
+    );
   });
 });

@@ -1,57 +1,115 @@
-# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
+# Reentrancy Attack Demo - Fast and Furious
 
-This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
+Dự án mô phỏng **Reentrancy Attack** trên smart contract blockchain, khai thác lỗ hổng **CEI Pattern** (Checks-Effects-Interactions) trong contract Bank.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## 📋 Tổng quan
 
-## Project Overview
+Dự án này bao gồm:
 
-This example project includes:
+- **Bank.sol**: Contract ngân hàng có lỗ hổng reentrancy (vi phạm CEI Pattern)
+- **Exploit.sol**: Contract khai thác lỗ hổng để rút tiền nhiều lần
+- **Test cases**: Mô phỏng quá trình exploit bằng TypeScript/Mocha
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using `mocha` and ethers.js
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+## 🔍 Reentrancy Attack là gì?
 
-## Usage
+**Reentrancy Attack** là một lỗ hổng bảo mật phổ biến trong smart contract, xảy ra khi:
 
-### Running Tests
+1. Contract A gọi function của Contract B
+2. Contract B gọi lại function của Contract A (trước khi A hoàn thành xử lý)
+3. Contract A chưa cập nhật state → B có thể khai thác state cũ
 
-To run all the tests in the project, execute the following command:
+### Ví dụ trong dự án này:
 
-```shell
+```
+1. Exploit gọi Bank.withdraw(1 ETH)
+2. Bank transfer 1 ETH → trigger Exploit.receive()
+3. Exploit.receive() lại gọi Bank.withdraw(1 ETH) (reentrancy!)
+4. Bank chưa trừ balance → vẫn pass require(balance >= 1 ETH)
+5. Bank transfer thêm 1 ETH → loop tiếp tục...
+```
+
+## ⚠️ Lỗ hổng trong Bank Contract
+
+### Code có lỗ hổng:
+
+```solidity
+function withdraw(uint256 amount) public {
+    require(balances[msg.sender] >= amount, "Insufficient balance");
+
+    // ❌ SAI: Transfer TRƯỚC, cập nhật balance SAU
+    (bool success, ) = msg.sender.call.value(amount)("");
+    require(success, "Transfer failed");
+
+    // ⚠️ Nếu có reentrancy, dòng này chưa chạy → balance chưa bị trừ
+    balances[msg.sender] -= amount;
+}
+```
+
+### Vấn đề:
+
+- **Vi phạm CEI Pattern**: Transfer (Interaction) trước khi cập nhật balance (Effect)
+- Khi ETH transfer trigger `receive()` của recipient, balance vẫn chưa bị trừ
+- Attacker có thể rút nhiều lần với cùng một balance
+
+## 🎯 Cách Exploit hoạt động
+
+### Exploit Contract:
+
+```solidity
+receive() external payable {
+    // Chỉ attack khi ETH đến từ Bank
+    if (msg.sender == address(bank) && attackCount < maxAttacks) {
+        attackCount++;
+        bank.withdraw(msg.value); // Reentrancy!
+    }
+}
+```
+
+### Flow Attack:
+
+```
+1. Exploit deposit 1 ETH vào Bank
+   → balance[Exploit] = 1 ETH
+
+2. Exploit gọi withdraw(1 ETH)
+   → Bank transfer 1 ETH → trigger receive()
+   → receive() gọi lại withdraw(1 ETH) (reentrancy!)
+   → Bank transfer thêm 1 ETH → trigger receive() lần 2
+   → ... (loop cho đến khi maxAttacks hoặc Bank hết ETH)
+
+3. Kết quả: Rút được nhiều ETH hơn số đã deposit!
+```
+
+## 🚀 Cài đặt và Chạy
+
+### Yêu cầu:
+
+- Node.js >= 18
+- Yarn hoặc npm
+
+### Cài đặt dependencies:
+
+```bash
+yarn install
+# hoặc
+npm install
+```
+
+### Chạy tests:
+
+```bash
+# Chạy tất cả tests
 npx hardhat test
+
+# Chạy test exploit
+npx hardhat test test/Attack.ts
 ```
 
-You can also selectively run the Solidity or `mocha` tests:
+### Kết quả mong đợi:
 
-```shell
-npx hardhat test solidity
-npx hardhat test mocha
 ```
-
-### Make a deployment to Sepolia
-
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
-
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
-
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+Test: Exploit
+  ✓ Số tiền nạp: 1.0
+  ✓ Số tiền exploit rút: 0.0 (đã rút hết!)
+  ✓ Bank contract balance giảm (bị exploit)
 ```
